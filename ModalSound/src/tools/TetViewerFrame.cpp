@@ -33,11 +33,11 @@ void TetViewerFrame::open()
     if ( file.endsWith(".tet", Qt::CaseInsensitive) )
     {
 #if QT_VERSION >= 0x050000
-        FV_TetMeshLoader_Double::load_mesh(file.toLatin1().data(), *msh);
-        //TetMeshLoader_Double::load_mesh(file.toLatin1().data(), *msh);
+        //FV_TetMeshLoader_Double::load_mesh(file.toLatin1().data(), *msh);
+        TetMeshLoader_Double::load_mesh(file.toLatin1().data(), *msh);
 #else
-        FV_TetMeshLoader_Double::load_mesh(file.toAscii().data(), *msh);
-        //TetMeshLoader_Double::load_mesh(file.toAscii().data(), *msh);
+        //FV_TetMeshLoader_Double::load_mesh(file.toAscii().data(), *msh);
+        TetMeshLoader_Double::load_mesh(file.toAscii().data(), *msh);
 #endif
     }
     else if ( file.endsWith(".node", Qt::CaseInsensitive) )
