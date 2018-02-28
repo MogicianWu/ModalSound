@@ -27,6 +27,10 @@
 #include "utils/macros.h"
 #include "utils/arrays.hpp"
 
+
+#include <bitset>
+
+
 #ifdef USE_HASH_MAP
 #   include <unordered_map>
 #   include <unordered_set>
@@ -224,8 +228,8 @@ class IsoStuffer
             for(int j = i+1;j < 4;++ j)
             {
                 const double ls2 = (vtx_[tidx[i]] - vtx_[tidx[j]]).lengthSqr();
-                assert(ls2 > 0.74*gs2_ && ls2 < 1.01*gs2_);
-                if (  ls2 > 0.8*gs2_ ) bit |= (1 << TET_PVTX_EDGE[i][j]);
+                assert( ls2 > 0.74*gs2_ && ls2 < 1.01*gs2_ );
+                if (  ls2 > 0.8*gs2_ ) bit |= (1 << TET_PVTX_EDGE[i][j]);      
             }
             longEdgeMask_.push_back(bit);
         }
@@ -443,9 +447,19 @@ void IsoStuffer<DistFunc>::bfs_boundary_octants(int ix, int iy, int iz)
             {   
                 // NOTE: here nowpos.x+D_COVTX[i][0], nowpos.y+D_.., nowpos.z+D_.. should NOT be out of range
                 // create three octants 
-                octTree_.create_leaf(nowpos.x+D_COVTX[i][0], nowpos.y, nowpos.z);
-                octTree_.create_leaf(nowpos.x, nowpos.y+D_COVTX[i][1], nowpos.z);
-                octTree_.create_leaf(nowpos.x, nowpos.y, nowpos.z+D_COVTX[i][2]);
+                double new_x = nowpos.x+D_COVTX[i][0];
+                double new_y = nowpos.y+D_COVTX[i][1];
+                double new_z = nowpos.z+D_COVTX[i][2];
+
+                if(new_x >= 0 && new_x < highestRes_[0]){
+                    octTree_.create_leaf(nowpos.x+D_COVTX[i][0], nowpos.y, nowpos.z);
+                }
+                if(new_y >= 0 && new_y < highestRes_[1]){
+                    octTree_.create_leaf(nowpos.x, nowpos.y+D_COVTX[i][1], nowpos.z);
+                }
+                if(new_z >= 0 && new_z < highestRes_[2]){
+                    octTree_.create_leaf(nowpos.x, nowpos.y, nowpos.z+D_COVTX[i][2]);
+                }
             }
         }
 
@@ -472,6 +486,55 @@ void IsoStuffer<DistFunc>::bfs_boundary_octants(int ix, int iy, int iz)
                 }
             }
         }
+
+      
+        //should consider all 26 neighbors; 
+        for(int i = -1; i <= 1; i++){
+          for(int j = -1; j <= 1; j++){
+            for(int k = -1; k <= 1; k++){
+                Tuple3i newp = nowpos;
+                newp[0] += i;
+                newp[1] += j;
+                newp[2] += k;
+
+                if(newp[0] < 0 || newp[0] >= highestRes_[0]) continue;
+                if(newp[1] < 0 || newp[1] >= highestRes_[1]) continue;
+                if(newp[2] < 0 || newp[2] >= highestRes_[2]) continue;
+
+                if (visited[newp.z][newp.y][newp.x]) continue;
+
+                //probe 8 vertices and 1 center point; if any signs differ add it to octree and the queue
+                double center_iso = get_center_iso_value(newp);
+                int sign = M_SIGN(center_iso);
+                assert(sign);
+
+                for(int v = 0; v < 8; v++){
+                    double probe_iso = get_iso_value(newp.x+D_CORNERS[v][0], 
+                                  newp.y+D_CORNERS[v][1], 
+                                  newp.z+D_CORNERS[v][2]);
+                    int curr_sign = M_SIGN(probe_iso);
+
+                    if (curr_sign * sign >= 0){
+                        sign += curr_sign; //same sign; keep looking
+                    }
+                    //different sign; should add this to octree
+                    else{
+                        visited[newp.z][newp.y][newp.x] = true;
+                        octTree_.create_leaf(newp.x, newp.y, newp.z);
+                        que.push(newp);
+                        break;
+                    }
+
+                    if(visited[newp.z][newp.y][newp.x] ){
+                      std::cout << "THIS SHOULD NEVER HAPPEN" << std::endl;
+                    }
+                }
+            }
+          }
+        }
+    
+
+
     } // end while 
 }
 
@@ -513,7 +576,7 @@ void IsoStuffer<DistFunc>::create_background_tets()
                     // cache iso value and vertex ids
                     cache_iso_and_vtx(faceid, ix, iy, iz, fiso, vids);
                     const double iso2 = get_center_iso_value(nowpos);
-
+ 
                     create_cross_tets_lowest(cid1, iso1, cid2, iso2, vids, fiso);
                     add_cross_pair(cid1, cid2);
                 }
@@ -653,11 +716,13 @@ void IsoStuffer<DistFunc>::create_cross_tets_lowest(
         int bit = bitmask(fiso[t], fiso[(t+1)%4], iso1, iso2);
         if ( bit == 15 ) continue;
 
-        if ( bit > 0 ) 
+        if ( bit > 0 ) {
             //NOTE that the red points are always the vtx[2] and vtx[3]
             add_breaking_tet(vids[t], vids[(t+1)%4], cid1, cid2);
-        else
+        }
+        else{
             tet_.push_back(Tuple4i(vids[t], vids[(t+1)%4], cid1, cid2));
+          }
     }
 }
 
@@ -736,10 +801,12 @@ void IsoStuffer<DistFunc>::create_half_pyramids(
     int bit = bitmask(viso[diagpt], viso[diagpt+2], viso[diagpt+1], ciso);
     if ( bit < 15 ) // not all the vertices are outside of the mesh
     {
-        if ( bit > 0 )
+        if ( bit > 0 ){
             add_breaking_tet(vids[diagpt], vids[diagpt+2], vids[diagpt+1], cid);
-        else
+        }
+        else{
             tet_.push_back(Tuple4i(vids[diagpt], vids[diagpt+2], vids[diagpt+1], cid));
+        }
     }
 
     // create the second half pyramid (diagpt, diagpt+2, (diagpt+3)%4)
@@ -747,10 +814,12 @@ void IsoStuffer<DistFunc>::create_half_pyramids(
     bit = bitmask(viso[diagpt], viso[pt3], viso[diagpt+2], ciso);
     if ( bit < 15 )
     {
-        if ( bit > 0 )
+        if ( bit > 0 ){
             add_breaking_tet(vids[diagpt], vids[pt3], vids[diagpt+2], cid);
-        else
+        }
+        else{
             tet_.push_back(Tuple4i(vids[diagpt], vids[pt3], vids[diagpt+2], cid));
+        }
     }
 }
 
@@ -966,7 +1035,7 @@ void IsoStuffer<DistFunc>::compute_cutting_pts()
 }
 
 template <class DistFunc>
-void IsoStuffer<DistFunc>::wrap_violated_pts()
+void IsoStuffer<DistFunc>:: wrap_violated_pts()
 {
     typedef std::map< int, std::map<int, double> >::const_iterator  VEIT;
     typedef std::map<int, double>::const_iterator                   SVIT;
@@ -1061,7 +1130,6 @@ bool IsoStuffer<DistFunc>::stencil_match(int tetid,
 
         case 2220:      // 3 positive + zero
         case 2202:
-        case    0:
         case 2022:
         case  222:
         case 2200:
@@ -1072,6 +1140,7 @@ bool IsoStuffer<DistFunc>::stencil_match(int tetid,
         case  200:
         case   20:
         case    2:
+        case    0:
             return true;
 
         case 2100:
@@ -1143,7 +1212,6 @@ bool IsoStuffer<DistFunc>::stencil_match(int tetid,
                 return true;
             }
             return false;
-
         case 2121:
             if ( longEdgeMask_[tetid] & (1 << TET_PVTX_EDGE[vt][vl]) )
             {
@@ -1296,7 +1364,7 @@ void IsoStuffer<DistFunc>::extract_final_tets()
         for(int j = 0;j < 3;++ j)
             if ( stencil_match(i, 2, ddd[j], ddd[(j+1)%3], ddd[(j+2)%3]) )
                 goto NEXT_EXTRACT_TET;
-
+        
         SHOULD_NEVER_HAPPEN(2);
 NEXT_EXTRACT_TET:
         ;
