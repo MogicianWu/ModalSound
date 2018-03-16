@@ -125,7 +125,7 @@ int main(int argc, char* argv[])
             dvproc->min_point(), alphaL, alphaS, *pdistfunc);
     pmesh = new TetMesh<double>;
     pstuffer->create_mesh(pmesh);
-    TetMeshWriter_Double::write_mesh(fs[1].c_str(), *pmesh);
+    FV_TetMeshWriter_Double::write_mesh(fs[1].c_str(), *pmesh);
 
     clean_up();
     return 0;

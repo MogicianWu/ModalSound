@@ -104,7 +104,7 @@ int main(int argc, char* argv[])
             ALPHA_LONG, ALPHA_SHORT, df);
     pmesh = new TetMesh<double>;
     pstuffer->create_mesh(pmesh);
-    TetMeshWriter_Double::write_mesh(argv[4], *pmesh);
+    FV_TetMeshWriter_Double::write_mesh(argv[4], *pmesh);
 
     clean_up();
     return 0;
