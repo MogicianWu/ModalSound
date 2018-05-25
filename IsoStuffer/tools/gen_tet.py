@@ -1,5 +1,6 @@
 import os
 import time
+import sys
 from os.path import isfile, join
 from tinydb import TinyDB, Query
 import subprocess
@@ -8,23 +9,25 @@ import threading
 
 #function within one thread;
 #read and execute isostuffer for files range from start_i to end_i(exclusive)
-def thread_func(start_i,end_i,db,files,meta_dir):
+def thread_func(start_i, end_i, db, files, output_dir):
 	for i in range(start_i,end_i):
 		f = files[i]
 		f_id = f[:-4]
-
-		#read in meta info; decide what grid resolution to use
-		meta_f = open(meta_dir + str(f_id) + ".txt", "r")
-		max_x,max_y,max_z = meta_f.readline().split(",")
-		min_x,min_y,min_z = meta_f.readline().split(",")
-		min_d = meta_f.readline()
-
+		found = False
+		#only generate tets that were confirmed as good 
+		for t in tetfiles:
+			if t[:-4] == f_id:
+				found = True
+		if not found:
+			continue
+		
 		#check if the watertight tetrahedron has been generated before
 		#if so skip this mesh
-		output_path = "/home/mogicianwu/Downloads/Thingi10K/corner_cases/tets/" + f_id + ".tet"
+		output_path = output_dir + f_id + ".tet"
 		if os.path.isfile(output_path):
 			continue
 
+		#resolution of octree grid; 
 		resolution = 7
 		command = "../gcc-build/src/isostuffer "
 		command += "-R " + str(resolution) + " "
@@ -38,9 +41,9 @@ def thread_func(start_i,end_i,db,files,meta_dir):
 		if proc.returncode != 0:
 			runtime = time.time() - start_time
 			percentage = float(i - start_i)/float(end_i - start_i)
-			print ('progress: ' + str(percentage))
-			print ('finished processing, runtime: ' + str(runtime))
-			print ("id: " + str(f_id))
+			print ('mesh ' + str(f_id) + ' caused isostuffer to throw an error')
+			print ('percentage done for this thread: ' + str(percentage))
+			print ('runtime: ' + str(runtime))
 		
 			strings = error.split(" ")
 			if len(strings) < 1:
@@ -59,26 +62,35 @@ def thread_func(start_i,end_i,db,files,meta_dir):
 
 			db.insert({'id': str(f_id), 'error' : str(error), 'runtime': str(runtime), 'error_type': str(error_type)})
 
+if __name__ == '__main__':
+	output_dir = "/home/mogician/Downloads/Thingi10K/FV_final_tets/"
+	mesh_dir = "/home/mogician/Downloads/Thingi10K/cleaned_meshes/"
+	num_threads = 8 #number of paralleled threads to run isostuffer; default is 8
 
-list_of_dbs = []
-for i in range(8):
-	name = 'result' + str(i) +'.json'
-	list_of_dbs.append(TinyDB(name))
+	if len(sys.argv) == 4:
+		output_dir = sys.argv[1]
+		mesh_dir = sys.argv[2]
+		num_threads = sys.argv[3]
 
-mesh_dir = "/home/mogicianwu/Downloads/Thingi10K/corner_cases/cleaned_reori_meshes/"
-meta_dir = "/home/mogicianwu/Downloads/Thingi10K/meta/"
+	tetfiles = [f for f in os.listdir(output_dir) if isfile(join(output_dir, f))]
+	onlyfiles = [f for f in os.listdir(mesh_dir) if isfile(join(mesh_dir, f))]
 
-onlyfiles = [f for f in os.listdir(mesh_dir) if isfile(join(mesh_dir, f))]
-
-for t in range(8):
-	thread_num_files = int(len(onlyfiles)/8)
-	start_i = t * thread_num_files
-	end_i = (t+1) * thread_num_files
-	end_i = min(end_i,len(onlyfiles))
-	args = (start_i,end_i,list_of_dbs[t],onlyfiles,meta_dir)
-	new_thread = threading.Thread(target = thread_func, args = args)
-	new_thread.start()
-	print ('thread ' + str(t) + ' started')
+	#used tinydb to record errors in each call
+	list_of_dbs = []
+	for i in range(num_threads):
+		name = 'result' + str(i) +'.json'
+		list_of_dbs.append(TinyDB(name))
+	
+	for t in range(num_threads):
+		thread_num_files = int(len(onlyfiles)/num_threads)
+		start_i = t * thread_num_files
+		end_i = (t+1) * thread_num_files
+		if t == num_threads - 1:
+			end_i = len(onlyfiles)
+		args = (start_i, end_i, list_of_dbs[t], onlyfiles, output_dir)
+		new_thread = threading.Thread(target = thread_func, args = args)
+		new_thread.start()
+		print ('thread ' + str(t) + ' started')
 
 
 
